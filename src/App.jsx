@@ -7,7 +7,7 @@ import {
   signOut,
   updateProfile,
 } from "firebase/auth";
-import { doc, setDoc, getDoc } from "firebase/firestore";
+import { doc, setDoc } from "firebase/firestore";
 import { auth, db } from "./firebase.js";
 import CRM from "./CRM.jsx";
 import { Target, Mail, Lock, User, LogOut, AlertTriangle, CheckCircle2, Eye, EyeOff, Loader2 } from "lucide-react";
@@ -31,6 +31,28 @@ export default function App() {
   const [success, setSuccess] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
+  const getAuthErrorMessage = (err, fallback) => {
+    if (!err?.code) return fallback;
+
+    if (err.code === "auth/user-not-found" || err.code === "auth/invalid-credential") {
+      return "אימייל או סיסמה שגויים";
+    }
+    if (err.code === "auth/too-many-requests") {
+      return "יותר מדי ניסיונות, נסה שוב מאוחר יותר";
+    }
+    if (err.code === "auth/email-already-in-use") {
+      return "האימייל כבר רשום במערכת";
+    }
+    if (err.code === "auth/weak-password") {
+      return "סיסמה חלשה מדי";
+    }
+    if (err.code === "auth/invalid-api-key" || err.code === "auth/api-key-not-valid") {
+      return "הגדרות Firebase חסרות או לא תקינות. ודא שקובץ .env מוגדר נכון ושדומיין האתר מאושר ב-Firebase Authentication > Settings > Authorized domains.";
+    }
+
+    return fallback;
+  };
+
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
       setUser(u);
@@ -46,9 +68,8 @@ export default function App() {
     try {
       await signInWithEmailAndPassword(auth, email, password);
     } catch (err) {
-      if (err.code === "auth/user-not-found" || err.code === "auth/invalid-credential") setError("אימייל או סיסמה שגויים");
-      else if (err.code === "auth/too-many-requests") setError("יותר מדי ניסיונות, נסה שוב מאוחר יותר");
-      else setError("שגיאה בהתחברות: " + err.message);
+      const uiError = getAuthErrorMessage(err, "שגיאה בהתחברות, בדוק את הגדרות Firebase ונסה שוב");
+      setError(uiError);
     }
     setSubmitting(false);
   };
@@ -70,9 +91,8 @@ export default function App() {
         createdAt: new Date().toISOString(),
       });
     } catch (err) {
-      if (err.code === "auth/email-already-in-use") setError("האימייל כבר רשום במערכת");
-      else if (err.code === "auth/weak-password") setError("סיסמה חלשה מדי");
-      else setError("שגיאה בהרשמה: " + err.message);
+      const uiError = getAuthErrorMessage(err, "שגיאה בהרשמה, בדוק את הגדרות Firebase ונסה שוב");
+      setError(uiError);
     }
     setSubmitting(false);
   };
