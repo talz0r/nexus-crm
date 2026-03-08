@@ -36,3 +36,13 @@ If login shows a Firebase setup error:
 3. Restart dev server or redeploy production
 
 > The app now shows exactly which `VITE_FIREBASE_*` keys are missing on-screen.
+
+
+## Troubleshooting auth errors
+
+If you still cannot register/login:
+
+1. Enable **Email/Password** in Firebase Authentication > Sign-in method.
+2. Add your exact website domain in Authentication > Settings > Authorized domains.
+3. If API key is restricted in Google Cloud, allow your website origin (HTTP referrer).
+4. Redeploy after any Firebase/Auth/env change.

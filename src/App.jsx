@@ -32,25 +32,35 @@ export default function App() {
   const [submitting, setSubmitting] = useState(false);
 
   const getAuthErrorMessage = (err, fallback) => {
-    if (!err?.code) return fallback;
+    const code = err?.code || "";
+    if (!code) return fallback;
 
-    if (err.code === "auth/user-not-found" || err.code === "auth/invalid-credential") {
+    if (code === "auth/user-not-found" || code === "auth/invalid-credential" || code === "auth/wrong-password") {
       return "אימייל או סיסמה שגויים";
     }
-    if (err.code === "auth/too-many-requests") {
+    if (code === "auth/too-many-requests") {
       return "יותר מדי ניסיונות, נסה שוב מאוחר יותר";
     }
-    if (err.code === "auth/email-already-in-use") {
+    if (code === "auth/email-already-in-use") {
       return "האימייל כבר רשום במערכת";
     }
-    if (err.code === "auth/weak-password") {
+    if (code === "auth/weak-password") {
       return "סיסמה חלשה מדי";
     }
-    if (err.code === "auth/invalid-api-key" || err.code === "auth/api-key-not-valid") {
-      return "הגדרות Firebase חסרות או לא תקינות. ודא שקובץ .env מוגדר נכון ושדומיין האתר מאושר ב-Firebase Authentication > Settings > Authorized domains.";
+    if (code === "auth/invalid-email") {
+      return "כתובת האימייל לא תקינה";
+    }
+    if (code === "auth/network-request-failed") {
+      return "שגיאת רשת. בדוק אינטרנט או חסימה של הדומיין מול Firebase";
+    }
+    if (code === "auth/operation-not-allowed") {
+      return "כניסה עם אימייל/סיסמה לא מופעלת ב-Firebase. הפעל Email/Password תחת Authentication > Sign-in method.";
+    }
+    if (code === "auth/invalid-api-key" || code === "auth/api-key-not-valid") {
+      return "מפתח Firebase לא תקין או חסום. בדוק שה-API key נכון ושדומיין האתר מאושר ב-Firebase Authentication > Settings > Authorized domains.";
     }
 
-    return fallback;
+    return `${fallback} (${code})`;
   };
 
   const setupSteps = [
@@ -131,7 +141,8 @@ export default function App() {
       await sendPasswordResetEmail(auth, email);
       setSuccess("קישור לאיפוס סיסמה נשלח לאימייל שלך");
     } catch (err) {
-      setError("לא הצלחנו לשלוח מייל איפוס");
+      const uiError = getAuthErrorMessage(err, "לא הצלחנו לשלוח מייל איפוס");
+      setError(uiError);
     }
     setSubmitting(false);
   };
