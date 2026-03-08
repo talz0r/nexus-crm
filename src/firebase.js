@@ -3,21 +3,27 @@ import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyBN6h8Xvhx50-uXcn1qt9273o8CUanoqyE",
-  authDomain: "nexus-crm-d800f.firebaseapp.com",
-  projectId: "nexus-crm-d800f",
-  storageBucket: "nexus-crm-d800f.firebasestorage.app",
-  messagingSenderId: "877308582449",
-  appId: "1:877308582449:web:2578ea9eaf177950539310"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
-let app, auth, db;
-try {
-  app = initializeApp(firebaseConfig);
-  auth = getAuth(app);
-  db = getFirestore(app);
-} catch (err) {
-  console.error("Firebase init failed:", err);
+const missingFirebaseKeys = Object.entries(firebaseConfig)
+  .filter(([, value]) => !value)
+  .map(([key]) => key);
+
+if (missingFirebaseKeys.length > 0) {
+  console.error(
+    `Firebase config is incomplete. Missing: ${missingFirebaseKeys.join(", ")}. ` +
+      "Set them in a local .env file (see .env.example)."
+  );
 }
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
 
 export { auth, db };
