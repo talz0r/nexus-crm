@@ -7,10 +7,10 @@ import {
   signOut,
   updateProfile,
 } from "firebase/auth";
-import { doc, setDoc, getDoc } from "firebase/firestore";
-import { auth, db } from "./firebase.js";
+import { doc, setDoc } from "firebase/firestore";
+import { auth, db, isFirebaseConfigured, missingFirebaseKeys } from "./firebase.js";
 import CRM from "./CRM.jsx";
-import { Target, Mail, Lock, User, LogOut, AlertTriangle, CheckCircle2, Eye, EyeOff, Loader2 } from "lucide-react";
+import { Target, Mail, Lock, User, AlertTriangle, CheckCircle2, Eye, EyeOff, Loader2 } from "lucide-react";
 
 const C = {
   bg: "#0b0e14", surface: "#151921", border: "#1e2736", text: "#e2e8f0",
@@ -28,34 +28,104 @@ export default function App() {
   const [name, setName] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState("");
+  const [errorDetails, setErrorDetails] = useState("");
   const [success, setSuccess] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
+  const getAuthErrorMessage = (err, fallback) => {
+    const code = err?.code || "";
+    const rawMessage = err?.message || "";
+    if (!code) return fallback;
+
+    if (code === "auth/user-not-found" || code === "auth/invalid-credential" || code === "auth/wrong-password") {
+      return "אימייל או סיסמה שגויים";
+    }
+    if (code === "auth/too-many-requests") {
+      return "יותר מדי ניסיונות, נסה שוב מאוחר יותר";
+    }
+    if (code === "auth/email-already-in-use") {
+      return "האימייל כבר רשום במערכת";
+    }
+    if (code === "auth/weak-password") {
+      return "סיסמה חלשה מדי";
+    }
+    if (code === "auth/invalid-email") {
+      return "כתובת האימייל לא תקינה";
+    }
+    if (code === "auth/network-request-failed") {
+      return "שגיאת רשת. בדוק אינטרנט או חסימה של הדומיין מול Firebase";
+    }
+
+    if (code === "auth/unauthorized-domain") {
+      return "הדומיין הנוכחי לא מורשה ב-Firebase Authentication. הוסף אותו תחת Authorized domains.";
+    }
+    if (code === "auth/app-not-authorized") {
+      return "האפליקציה לא מורשית מול Firebase. בדוק שה-Web App וה-API key שייכים לאותו פרויקט.";
+    }
+    if (rawMessage.toLowerCase().includes("referer") || rawMessage.toLowerCase().includes("requests from referer")) {
+      return "ה-API key חסום לפי דומיין (HTTP referrer). עדכן את הגבלת המפתח ב-Google Cloud כדי לאפשר את הדומיין של האתר.";
+    }
+    if (code === "auth/operation-not-allowed") {
+      return "כניסה עם אימייל/סיסמה לא מופעלת ב-Firebase. הפעל Email/Password תחת Authentication > Sign-in method.";
+    }
+    if (code === "auth/invalid-api-key" || code === "auth/api-key-not-valid") {
+      return "מפתח Firebase לא תקין או חסום. בדוק שה-API key נכון ושדומיין האתר מאושר ב-Firebase Authentication > Settings > Authorized domains.";
+    }
+
+    return `${fallback} (${code})`;
+  };
+
+  const setupSteps = [
+    "צור קובץ .env מתוך .env.example",
+    "הדבק את ערכי Firebase Web App מתוך Firebase Console",
+    "הוסף את הדומיין שלך ל-Authorized domains",
+    "עדכן את אותם משתנים גם ב-Vercel/GitHub Actions אם צריך",
+    "בצע Deploy מחדש לאחר עדכון משתני סביבה",
+  ];
+
   useEffect(() => {
+    if (!isFirebaseConfigured || !auth) {
+      setLoading(false);
+      return;
+    }
+
     const unsub = onAuthStateChanged(auth, (u) => {
       setUser(u);
       setLoading(false);
     });
+
     return unsub;
   }, []);
 
   const handleLogin = async (e) => {
     e.preventDefault();
+    if (!auth) {
+      setError("Firebase לא הוגדר. בדוק קובץ .env והפעל את השרת מחדש.");
+      setErrorDetails("auth object is null");
+      return;
+    }
     setError("");
+    setErrorDetails("");
     setSubmitting(true);
     try {
       await signInWithEmailAndPassword(auth, email, password);
     } catch (err) {
-      if (err.code === "auth/user-not-found" || err.code === "auth/invalid-credential") setError("אימייל או סיסמה שגויים");
-      else if (err.code === "auth/too-many-requests") setError("יותר מדי ניסיונות, נסה שוב מאוחר יותר");
-      else setError("שגיאה בהתחברות: " + err.message);
+      const uiError = getAuthErrorMessage(err, "שגיאה בהתחברות, בדוק את הגדרות Firebase ונסה שוב");
+      setError(uiError);
+      setErrorDetails(`code: ${err?.code || "unknown"} | ${err?.message || ""}`);
     }
     setSubmitting(false);
   };
 
   const handleRegister = async (e) => {
     e.preventDefault();
+    if (!auth || !db) {
+      setError("Firebase לא הוגדר. בדוק קובץ .env והפעל את השרת מחדש.");
+      setErrorDetails("auth object is null");
+      return;
+    }
     setError("");
+    setErrorDetails("");
     if (password.length < 6) { setError("סיסמה חייבת להכיל לפחות 6 תווים"); return; }
     if (!name.trim()) { setError("נא למלא שם"); return; }
     setSubmitting(true);
@@ -70,28 +140,37 @@ export default function App() {
         createdAt: new Date().toISOString(),
       });
     } catch (err) {
-      if (err.code === "auth/email-already-in-use") setError("האימייל כבר רשום במערכת");
-      else if (err.code === "auth/weak-password") setError("סיסמה חלשה מדי");
-      else setError("שגיאה בהרשמה: " + err.message);
+      const uiError = getAuthErrorMessage(err, "שגיאה בהרשמה, בדוק את הגדרות Firebase ונסה שוב");
+      setError(uiError);
+      setErrorDetails(`code: ${err?.code || "unknown"} | ${err?.message || ""}`);
     }
     setSubmitting(false);
   };
 
   const handleReset = async (e) => {
     e.preventDefault();
+    if (!auth) {
+      setError("Firebase לא הוגדר. בדוק קובץ .env והפעל את השרת מחדש.");
+      setErrorDetails("auth object is null");
+      return;
+    }
     setError("");
+    setErrorDetails("");
     setSuccess("");
     setSubmitting(true);
     try {
       await sendPasswordResetEmail(auth, email);
       setSuccess("קישור לאיפוס סיסמה נשלח לאימייל שלך");
     } catch (err) {
-      setError("לא הצלחנו לשלוח מייל איפוס");
+      const uiError = getAuthErrorMessage(err, "לא הצלחנו לשלוח מייל איפוס");
+      setError(uiError);
+      setErrorDetails(`code: ${err?.code || "unknown"} | ${err?.message || ""}`);
     }
     setSubmitting(false);
   };
 
   const handleLogout = async () => {
+    if (!auth) return;
     await signOut(auth);
   };
 
@@ -105,6 +184,33 @@ export default function App() {
           <div style={{ color: C.textM, fontSize: 14, fontFamily: "'Rubik',sans-serif" }}>טוען...</div>
         </div>
         <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}`}</style>
+      </div>
+    );
+  }
+
+  if (!isFirebaseConfigured) {
+    const ff = "'Rubik','Segoe UI',sans-serif";
+    return (
+      <div dir="rtl" style={{ fontFamily: ff, background: C.bg, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+        <div style={{ width: "100%", maxWidth: 600, background: C.surface, borderRadius: 20, border: `1px solid ${C.border}`, padding: "26px 24px", boxShadow: "0 20px 60px rgba(0,0,0,.3)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+            <AlertTriangle size={18} color={C.danger} />
+            <h2 style={{ color: C.text, fontSize: 20, margin: 0 }}>המערכת לא הוגדרה עדיין</h2>
+          </div>
+          <p style={{ color: C.textM, marginBottom: 12, lineHeight: 1.7 }}>
+            חסרים משתני סביבה של Firebase ולכן אי אפשר להתחבר כרגע.
+          </p>
+          <p style={{ color: C.text, marginBottom: 8, fontWeight: 600 }}>משתנים חסרים:</p>
+          <code style={{ display: "block", background: C.bg, border: `1px solid ${C.border}`, borderRadius: 12, padding: 12, color: C.ok, marginBottom: 16 }}>
+            {missingFirebaseKeys.join(", ")}
+          </code>
+
+          <ol style={{ color: C.textM, paddingRight: 20, margin: 0, lineHeight: 1.8 }}>
+            {setupSteps.map((step) => (
+              <li key={step}>{step}</li>
+            ))}
+          </ol>
+        </div>
       </div>
     );
   }
@@ -146,9 +252,16 @@ export default function App() {
         <div style={{ background: C.surface, borderRadius: 20, border: `1px solid ${C.border}`, padding: "32px 28px", boxShadow: "0 20px 60px rgba(0,0,0,.3)" }}>
           {/* Error / Success */}
           {error && (
-            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderRadius: 10, background: "#f8717118", border: "1px solid #f8717130", marginBottom: 16 }}>
-              <AlertTriangle size={16} color={C.danger} />
-              <span style={{ fontSize: 13, color: C.danger }}>{error}</span>
+            <div style={{ padding: "10px 14px", borderRadius: 10, background: "#f8717118", border: "1px solid #f8717130", marginBottom: 16 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <AlertTriangle size={16} color={C.danger} />
+                <span style={{ fontSize: 13, color: C.danger }}>{error}</span>
+              </div>
+              {errorDetails && (
+                <div dir="ltr" style={{ marginTop: 6, fontSize: 11, color: "#fca5a5", opacity: 0.9, wordBreak: "break-all" }}>
+                  {errorDetails}
+                </div>
+              )}
             </div>
           )}
           {success && (
